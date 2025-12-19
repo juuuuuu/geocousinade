@@ -16,9 +16,11 @@
             display: flex;
             flex-direction: row;
             gap: 20px;
+            width: 100%;
             max-width: 1200px;
             margin: 0 auto;
             align-items: flex-start;
+            box-sizing: border-box;
         }
         .container {
             flex: 0 0 350px;
@@ -26,6 +28,7 @@
             padding: 2rem;
             border-radius: 12px;
             box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            box-sizing: border-box;
         }
         h1 {
             color: #2c3e50;
@@ -60,15 +63,40 @@
             font-size: 1.1rem;
             cursor: pointer;
             transition: background-color 0.3s;
+            margin-bottom: 0.5rem;
         }
         button:hover {
             background-color: #2980b9;
         }
+        button:disabled {
+            background-color: #95a5a6;
+            cursor: not-allowed;
+        }
+        .secondary-button {
+            background-color: #2ecc71;
+        }
+        .secondary-button:hover {
+            background-color: #27ae60;
+        }
+        .remove-city {
+            background-color: #e74c3c;
+            padding: 0.5rem;
+            width: auto;
+            margin-bottom: 0;
+            margin-top: 5px;
+            font-size: 0.9rem;
+        }
+        .remove-city:hover {
+            background-color: #c0392b;
+        }
         #map {
             flex: 1;
+            width: 100%;
             height: 600px;
+            min-height: 300px;
             border-radius: 12px;
             box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            z-index: 1;
         }
         .loading {
             display: none;
@@ -93,16 +121,23 @@
 
         /* Responsive */
         @media (max-width: 900px) {
+            body {
+                padding: 10px;
+            }
             .main-wrapper {
                 flex-direction: column;
                 align-items: stretch;
+                gap: 10px;
+                height: auto;
             }
             .container {
                 flex: none;
-                margin-bottom: 20px;
+                width: 100%;
+                padding: 1.5rem;
             }
             #map {
                 height: 400px;
+                min-height: 300px;
             }
         }
     </style>
@@ -113,19 +148,22 @@
     <div class="container">
         <h1>Cousinade triangulation</h1>
         <form id="cityForm">
-            <div class="form-group">
-                <label for="city1">Ville #1</label>
-                <input type="text" id="city1" placeholder="Ex: Paris" required>
+            <div id="citiesContainer">
+                <div class="form-group">
+                    <label for="city1">Ville #1</label>
+                    <input type="text" id="city1" class="city-input" placeholder="Ex: Paris" required>
+                </div>
+                <div class="form-group">
+                    <label for="city2">Ville #2</label>
+                    <input type="text" id="city2" class="city-input" placeholder="Ex: Brest" required>
+                </div>
+                <div class="form-group">
+                    <label for="city3">Ville #3</label>
+                    <input type="text" id="city3" class="city-input" placeholder="Ex: Toulouse" required>
+                </div>
             </div>
-            <div class="form-group">
-                <label for="city2">Ville #2</label>
-                <input type="text" id="city2" placeholder="Ex: Brest" required>
-            </div>
-            <div class="form-group">
-                <label for="city3">Ville #3</label>
-                <input type="text" id="city3" placeholder="Ex: Toulouse" required>
-            </div>
-            <button type="submit">Calculer la triangulation</button>
+            <button type="button" id="addCityBtn" class="secondary-button">Ajouter une ville</button>
+            <button type="submit" id="submitBtn">Calculer la triangulation</button>
         </form>
         <div id="loading" class="loading">
             <div class="spinner"></div>
@@ -147,6 +185,33 @@
     let markers = [];
     let circle = null;
     let polylines = [];
+
+    let cityCount = 3;
+
+    function addCityInput() {
+        cityCount++;
+        const container = document.getElementById('citiesContainer');
+        const div = document.createElement('div');
+        div.className = 'form-group';
+        div.innerHTML = `
+            <label for="city${cityCount}">Ville #${cityCount}</label>
+            <input type="text" id="city${cityCount}" class="city-input" placeholder="Ex: Ville ${cityCount}" required>
+            <button type="button" class="remove-city" onclick="this.parentElement.remove()">Supprimer</button>
+        `;
+        container.appendChild(div);
+    }
+
+    document.getElementById('addCityBtn').addEventListener('click', addCityInput);
+
+    // Force la carte à se redimensionner correctement, surtout sur mobile
+    function refreshMap() {
+        setTimeout(() => {
+            map.invalidateSize();
+        }, 300); // Augmentation du délai pour s'assurer que le layout CSS est stabilisé
+    }
+
+    window.addEventListener('resize', refreshMap);
+    window.addEventListener('load', refreshMap);
 
     function formatDuration(seconds) {
         const hours = Math.floor(seconds / 3600);
@@ -197,8 +262,8 @@
     async function findOptimalCenter(cityCoords) {
         // Départ du barycentre géographique
         let currentCenter = {
-            lat: cityCoords.reduce((sum, c) => sum + c.lat, 0) / 3,
-            lon: cityCoords.reduce((sum, c) => sum + c.lon, 0) / 3
+            lat: cityCoords.reduce((sum, c) => sum + c.lat, 0) / cityCoords.length,
+            lon: cityCoords.reduce((sum, c) => sum + c.lon, 0) / cityCoords.length
         };
 
         const loadingText = document.getElementById('loadingText');
@@ -255,8 +320,11 @@
     document.getElementById('cityForm').addEventListener('submit', async (e) => {
         e.preventDefault();
 
+        const submitBtn = document.getElementById('submitBtn');
         const loading = document.getElementById('loading');
         const loadingText = document.getElementById('loadingText');
+
+        submitBtn.disabled = true;
         loading.style.display = 'block';
         loadingText.textContent = "Calcul de l'itinéraire optimal...";
 
@@ -267,11 +335,15 @@
         polylines = [];
         if (circle) map.removeLayer(circle);
 
-        const cities = [
-            document.getElementById('city1').value,
-            document.getElementById('city2').value,
-            document.getElementById('city3').value
-        ];
+        const cities = Array.from(document.querySelectorAll('.city-input'))
+            .map(input => input.value.trim())
+            .filter(value => value !== "");
+
+        if (cities.length < 2) {
+            alert("Veuillez saisir au moins deux villes.");
+            loading.style.display = 'none';
+            return;
+        }
 
         try {
             const coords = await Promise.all(cities.map(getCoordinates));
@@ -300,13 +372,14 @@
             });
 
             circle = L.circle([optimalCenter.lat, optimalCenter.lon], {
-                color: 'red',
-                fillColor: '#f03',
-                fillOpacity: 0.5,
-                radius: 100000 // 100 km en mètres
+                color: 'green',
+                colorOpacity: 0.5,
+                fillColor: '#0f8e00',
+                fillOpacity: 0.1,
+                radius: 50000 // 50 km en mètres
             }).addTo(map);
 
-            const avgTime = optimalCenter.times.reduce((a, b) => a + b, 0) / 3;
+            const avgTime = optimalCenter.times.reduce((a, b) => a + b, 0) / coords.length;
             const avgTimeStr = formatDuration(avgTime);
             circle.bindPopup(`Centre optimal (Temps moyen: ${avgTimeStr})`).openPopup();
 
@@ -317,6 +390,7 @@
             console.error(error);
             alert(error.message);
         } finally {
+            submitBtn.disabled = false;
             loading.style.display = 'none';
             loadingText.textContent = "Recherche des coordonnées...";
         }
